@@ -1,0 +1,161 @@
+
+# -------------------------------------------------
+# 1. Setup
+# -------------------------------------------------
+
+# Setting working directory 
+setwd("~/RR")
+
+# Load required libraries
+library(dplyr)       # Data wrangling
+library(tidyverse)   # General tidyverse tools
+library(ggplot2)     # Plotting
+library(car)         # Levene’s test for homogeneity of variance
+library(effectsize)  # Effect size calculations
+library(afex)        # Mixed ANOVA
+library(emmeans)     # Post-hoc tests
+
+# -------------------------------------------------
+# 2. Loading Data
+# -------------------------------------------------
+Participant_data <- read.csv("RR/Participant_data.csv")
+AR_data1 <- read.csv("RR/AR_data1.csv")
+SR_1 <- read.csv("RR/SR_1.csv")
+
+# -------------------------------------------------
+# 3. Demographic Summary
+# -------------------------------------------------
+# Summarise participants by task group and gender
+demographics_summary <- Participant_data %>%
+  group_by(Group, Gender) %>%
+  summarise(
+    Count = n(),                        
+    Mean_Age = mean(Age, na.rm = TRUE), 
+    SD_Age = sd(Age, na.rm = TRUE)      
+  ) %>%
+  ungroup()
+
+print(demographics_summary)
+
+# Overall demographics by group
+overall_summary <- Participant_data %>%
+  group_by(Group) %>%
+  summarise(
+    Total_Participants = n(),           
+    Mean_Age = mean(Age, na.rm = TRUE), 
+    SD_Age = sd(Age, na.rm = TRUE)      
+  ) %>%
+  ungroup()
+
+print(overall_summary)
+
+# -------------------------------------------------
+# 4. Descriptive Statistics
+# -------------------------------------------------
+
+# Arithmetic Task
+arithmetic_stats <- AR_data1 %>%
+  group_by(Condition) %>%
+  summarize(
+    Mean_Accuracy = mean(`Mean Accuracy`, na.rm = TRUE),
+    SD_Accuracy = sd(`Mean Accuracy`, na.rm = TRUE),
+    Median_Accuracy = median(`Mean Accuracy`, na.rm = TRUE),
+    Min_Accuracy = min(`Mean Accuracy`, na.rm = TRUE),
+    Max_Accuracy = max(`Mean Accuracy`, na.rm = TRUE),
+    n = n()
+  ) %>%
+  mutate(SE_Accuracy = SD_Accuracy / sqrt(n))
+
+print(arithmetic_stats)
+
+# Serial Recall Task
+serial_recall_stats <- SR_1 %>%
+  group_by(Condition) %>%
+  summarize(
+    Mean_Accuracy = mean(`Mean Accuracy`, na.rm = TRUE),
+    SD_Accuracy = sd(`Mean Accuracy`, na.rm = TRUE),
+    Median_Accuracy = median(`Mean Accuracy`, na.rm = TRUE),
+    Min_Accuracy = min(`Mean Accuracy`, na.rm = TRUE),
+    Max_Accuracy = max(`Mean Accuracy`, na.rm = TRUE),
+    n = n()
+  ) %>%
+  mutate(SE_Accuracy = SD_Accuracy / sqrt(n))
+
+print(serial_recall_stats)
+
+
+# -------------------------------------------------
+# 5. Assumption Checks
+# -------------------------------------------------
+
+# Shapiro-Wilk Test (normality check for parametric tests) to check whether the data in each group was normally distributed. 
+shapiro.test(AR_data1$`Mean Accuracy`)
+shapiro.test(SR_1$`Mean Accuracy`)
+
+# Levene’s Test applied to confirm whether variances were equal across groups. 
+leveneTest(`Mean Accuracy` ~ Condition, data = AR_data1)
+leveneTest(`Mean Accuracy` ~ Condition, data = SR_1)
+
+# -------------------------------------------------
+# 6. One-Way ANOVAs
+# -------------------------------------------------
+
+# Arithmetic Task – A one-way ANOVA: This was conducted to examine whether there were statistically significant differences in mean accuracy scores across different experimental conditions. This test was chosen because I was comparing the means of more than two groups.
+anova_arithmetic <- aov(`Mean Accuracy` ~ Condition, data = AR_data1)
+summary(anova_arithmetic)
+
+# Post-hoc Tukey test: When the ANOVA showed significant results, I used Tukey’s HSD post hoc test to identify specifically which groups differed from one another.
+tukey_arithmetic <- TukeyHSD(anova_arithmetic)
+print(tukey_arithmetic)
+
+# Serial Recall Task – ANOVA
+anova_serial <- aov(`Mean Accuracy` ~ Condition, data = SR_1)
+summary(anova_serial)
+
+tukey_serial <- TukeyHSD(anova_serial)
+print(tukey_serial)
+
+# -------------------------------------------------
+# 7. Mixed ANOVA
+# -------------------------------------------------
+# Combine Arithmetic + Serial Recall into one dataset
+AR_data1$Task <- "Arithmetic"
+SR_1$Task <- "SerialRecall"
+
+combined_data <- rbind(
+  AR_data1 %>% select(Participant, Condition, `Mean Accuracy`, Task),
+  SR_1 %>% select(Participant, Condition, `Mean Accuracy`, Task)
+)
+
+# Run Mixed ANOVA (within: Condition, between: Task) I ran a mixed ANOVA to examine the interaction between task type (between-subjects factor) and condition (within-subjects factor). This allowed me to test not only the main effects of each variable but also whether the effect of condition differed depending on the task performed.
+mixed_anova <- aov_ez(
+  id = "Participant",
+  dv = "Mean Accuracy",
+  within = "Condition",
+  between = "Task",
+  data = combined_data
+)
+summary(mixed_anova)
+
+# -------------------------------------------------
+# 8. Effect Sizes
+# -------------------------------------------------
+
+# Calculate eta-squared for ANOVA results: To complement statistical significance testing, I calculated the effect size (eta squared, η²). This provides an estimate of the magnitude of the differences between groups, giving more context beyond p-values.
+eta_squared(anova_arithmetic, partial = TRUE)
+eta_squared(anova_serial, partial = TRUE)
+
+# -------------------------------------------------
+# 9. Visualisations
+# -------------------------------------------------
+# Plot accuracy by condition for Arithmetic
+ggplot(AR_data1, aes(x = Condition, y = `Mean Accuracy`)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "skyblue") +
+  geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+  labs(title = "Arithmetic Task – Accuracy by Condition", y = "Mean Accuracy")
+
+# Plot accuracy by condition for Serial Recall
+ggplot(SR_1, aes(x = Condition, y = `Mean Accuracy`)) +
+  geom_bar(stat = "summary", fun = "mean", fill = "lightgreen") +
+  geom_errorbar(stat = "summary", fun.data = mean_se, width = 0.2) +
+  labs(title = "Serial Recall Task – Accuracy by Condition", y = "Mean Accuracy")
